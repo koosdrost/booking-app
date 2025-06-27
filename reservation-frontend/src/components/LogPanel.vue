@@ -11,7 +11,7 @@
       </ul>
       <div class="log-fade"></div>
     </div>
-  </div>
+  </div> 
 </template>
 
 <script setup>

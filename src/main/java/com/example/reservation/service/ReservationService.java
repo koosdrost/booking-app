@@ -97,7 +97,7 @@ public class ReservationService {
                 log("'Veld reserveren' button not found");
                 return slots;
             }
-            log("Reservation page loaded");
+
 
             // Wait for reservation page to load
             Thread.sleep(3000);
