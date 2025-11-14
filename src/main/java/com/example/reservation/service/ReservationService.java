@@ -1,5 +1,7 @@
 package com.example.reservation.service;
 
+import com.example.reservation.config.ReservationProperties;
+import com.example.reservation.config.SeleniumProperties;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -22,91 +24,105 @@ import java.util.Map;
 
 @Service
 public class ReservationService {
-    private static final String LOGIN_URL = "https://bvcg.nl/mijn-account/";
-    private static final String USERNAME = "koosdrost90@gmail.com";
-    private static final String PASSWORD = "30Oktober!";
-    private static final String BOOKING_URL = "https://bvcg.nl/veld-reserveren/";
     private static final Logger logger = LoggerFactory.getLogger(ReservationService.class);
     private static final List<String> logMessages = Collections.synchronizedList(new ArrayList<>());
+
+    private final ReservationProperties reservationProperties;
+    private final SeleniumProperties seleniumProperties;
+
+    public ReservationService(ReservationProperties reservationProperties,
+                             SeleniumProperties seleniumProperties) {
+        this.reservationProperties = reservationProperties;
+        this.seleniumProperties = seleniumProperties;
+    }
 
     public List<Map<String, String>> getAvailableSlots() {
         logMessages.clear();
         log("Starting search");
         WebDriverManager.chromedriver().setup();
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless=new");
+        if (seleniumProperties.isHeadless()) {
+            options.addArguments("--headless=new");
+        }
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
         WebDriver driver = new ChromeDriver(options);
-        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
+        driver.manage().timeouts().implicitlyWait(
+            Duration.ofSeconds(seleniumProperties.getTimeout().getImplicit())
+        );
+        WebDriverWait wait = new WebDriverWait(driver,
+            Duration.ofSeconds(seleniumProperties.getTimeout().getExplicit())
+        );
         List<Map<String, String>> slots = new ArrayList<>();
         try {
             log("Starting login process");
-            driver.get(LOGIN_URL);
+            driver.get(reservationProperties.getLogin().getUrl());
 
             // Handle cookie banner if present
             try {
-                WebElement cookieAccept = driver.findElement(By.xpath("//*[contains(text(),'Accepteer alles')]"));
+                WebElement cookieAccept = wait.until(
+                    ExpectedConditions.presenceOfElementLocated(
+                        By.xpath("//*[contains(text(),'Accepteer alles')]")
+                    )
+                );
                 cookieAccept.click();
-                Thread.sleep(1000); // Wait for the banner to disappear
+                wait.until(ExpectedConditions.invisibilityOf(cookieAccept));
                 log("Accepted cookie banner");
             } catch (Exception e) {
                 log("No cookie banner present");
             }
 
             // Fill in login form
-            WebElement usernameInput = driver.findElement(By.id("username"));
+            WebElement usernameInput = wait.until(
+                ExpectedConditions.presenceOfElementLocated(By.id("username"))
+            );
             WebElement passwordInput = driver.findElement(By.id("password"));
-            usernameInput.sendKeys(USERNAME);
-            passwordInput.sendKeys(PASSWORD);
+            usernameInput.sendKeys(reservationProperties.getUsername());
+            passwordInput.sendKeys(reservationProperties.getPassword());
             log("Filled in login form");
 
             // Wait for login button to be clickable
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-            WebElement loginButton = wait.until(ExpectedConditions.elementToBeClickable(By.name("login")));
+            WebElement loginButton = wait.until(
+                ExpectedConditions.elementToBeClickable(By.name("login"))
+            );
             ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView(true);", loginButton);
             loginButton.click();
             log("Clicked login button");
 
-            // Wait for login and redirect
-            Thread.sleep(3000);
-
             // Check for login success: look for logout link or user info
             boolean loginSuccess = false;
             try {
-                driver.findElement(By.xpath("//*[contains(text(),'Uitloggen') or contains(text(),'Log uit') or contains(text(),'Logout') or contains(@href,'logout') or contains(text(),'Mijn account')]"));
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath("//*[contains(text(),'Uitloggen') or contains(text(),'Log uit') or contains(text(),'Logout') or contains(@href,'logout') or contains(text(),'Mijn account')]")
+                ));
                 loginSuccess = true;
             } catch (Exception e) {
                 loginSuccess = false;
             }
             if (loginSuccess) {
-                logger.info("Login successful for user: {}", USERNAME);
+                logger.info("Login successful for user: {}", reservationProperties.getUsername());
                 log("Login successful");
             } else {
-                logger.error("Login failed for user: {}", USERNAME);
+                logger.error("Login failed for user: {}", reservationProperties.getUsername());
                 log("Login failed");
+                return slots;
             }
 
             // Click on "Veld reserveren" (Field reservation) button or link
-            List<WebElement> veldButtons = driver.findElements(By.xpath("//span[contains(@class,'elementor-button-text') and contains(translate(normalize-space(text()), '\u00A0', ' '), 'Veld reserveren')]"));
-            if (!veldButtons.isEmpty()) {
-                WebElement parent = veldButtons.get(0).findElement(By.xpath(".."));
-                parent.click();
+            try {
+                WebElement veldButton = wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//span[contains(@class,'elementor-button-text') and contains(translate(normalize-space(text()), '\u00A0', ' '), 'Veld reserveren')]/..")
+                ));
+                veldButton.click();
                 log("Clicked 'Veld reserveren' button");
-            } else {
-                log("'Veld reserveren' button not found");
-                return slots;
+            } catch (Exception e) {
+                log("'Veld reserveren' button not found, navigating directly to booking page");
             }
-            log("Reservation page loaded");
 
-            // Wait for reservation page to load
-            Thread.sleep(3000);
-            log("Reservation page loaded");
-
-            // After login, go to the booking page
-            driver.get(BOOKING_URL);
-            Thread.sleep(3000);
-            log("Navigated to booking page: " + BOOKING_URL);
+            // Navigate to the booking page
+            driver.get(reservationProperties.getBookingUrl());
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("body")));
+            log("Navigated to booking page: " + reservationProperties.getBookingUrl());
 
             // Scrape for available fields (Veld) on Wednesdays (wo)
             List<Map<String, String>> wednesdaySlots = new ArrayList<>();
