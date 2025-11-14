@@ -23,10 +23,14 @@ const logPanel = ref(null)
 
 const fetchLogs = async () => {
   try {
-    const res = await fetch('/logs')
+    const res = await fetch('/api/logs')
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`)
+    }
     logs.value = await res.json()
   } catch (e) {
-    logs.value = []
+    console.error('Error fetching logs:', e)
+    // Don't clear logs on error, keep the last successful fetch
   }
 }
 

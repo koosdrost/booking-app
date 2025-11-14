@@ -17,8 +17,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/logs': 'http://localhost:8080',
-      '/available-slots': 'http://localhost:8080',
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
 }) 
